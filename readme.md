@@ -1,7 +1,9 @@
 Prejeto feito pelo grupo 07.
 
-Basicamente pegamos o CRUD indexado e classes do membro que conseguiu terminar ele 100% e adaptamos para usuario. 
+Juntamos todos os Projetos anteriores nesse, por isso esse foi o mais trabalhoso.
 
-Depois separamos a interface de cadastro e login pro resto do grupo. 
+Dividimos a implementação/alteração das classes igualmente pelos membros para diminuir a dificuldade.
 
-A implementação da interface foi bem simples na verdade, não há realmente o que explicar, teve um metodo para cadastro e outro para login.
+Em seguida trabalhamos juntos para resolver os erros que apareceram.
+
+Não tem muito o que dizer em geral sobre a realização dessa tarefa, incluimos a listaInvertida e adaptamos/modificamos/criamos os metodos igual foi pedido.

@@ -4,7 +4,8 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.text.DecimalFormat;
 
-public class Usuario implements Register {
+public class Usuario implements Register 
+{
     
     protected int idUsuario;
     protected String nome;

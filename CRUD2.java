@@ -1,187 +1,177 @@
-import java.io.RandomAccessFile;
 import java.lang.reflect.Constructor;
-import java.io.*;
+import java.io.RandomAccessFile;
+import java.io.IOException;
 
-//Classe CRUD Indexado
-// Responsável por realizar operações de criação, leitura, escrita e exclusão no banco de dados.
+public class CRUD2 <T extends Register> {
 
-public class CRUD2<T extends Register> {
-  protected Constructor<T> construtor;
-  protected String fileName;
-  protected String diretorio;
-  protected String cestos;
-  protected String arvoreB;
-  private HashExtensivel hash;
-  private ArvoreBMais_String_Int arvore;
+    Constructor<T> construtor;
+    String nomeDoArquivo; 
+    RandomAccessFile arquivo;
+    HashExtensivel indexDireto;
+    ArvoreBMais indexIndireto;
 
-  public CRUD2(Constructor<T> construtor, String fn) throws Exception {
-    this.construtor = construtor;
-    fileName = fn;
+    public CRUD2(Constructor<T> construtor, String nomeDoArquivo) throws IOException {
+      this.nomeDoArquivo = nomeDoArquivo;
+      this.construtor = construtor;
+      arquivo = new RandomAccessFile(nomeDoArquivo, "rw");
+      try {
+        indexDireto = new HashExtensivel(4,"diretorio.db","cestos.db");
+        indexIndireto = new ArvoreBMais(5,"arvorebmais.db");
+      } catch (Exception e) {
+          System.out.println(e.getMessage());
+      }
+      if(arquivo.length()<4){
+        arquivo.writeInt(0);
+      }
+    }
 
-    // Cria os arquivos índices
-    diretorio = fn;
-    String[] temp = fn.split("\\.");
-    diretorio = temp[0] + ".diretorio.idx";
-    cestos = temp[0] + ".cestos.idx";
-    arvoreB = temp[0] + ".arvore.idx";
+    public int create(T objeto) throws IOException { 
 
-    // apaga o arquivo anterior
-    new File(diretorio).delete();
-    new File(cestos).delete();
+      arquivo.seek(0);
+      int id = arquivo.readInt() + 1;
+      objeto.setID(id);
 
-    RandomAccessFile arq = new RandomAccessFile(fileName, "rw");
-    arq.writeInt(0);
-    arq.close();
+      try {
+          
+        long pos = arquivo.length();
+        arquivo.seek(pos);
+        
+        byte ba[] = objeto.toByteArray();
+        arquivo.writeByte(0);
+        arquivo.writeInt(ba.length);
+        arquivo.write(ba);
 
-    // Inicia as estruturas Hash e Arvore
-    hash = new HashExtensivel(10, diretorio, cestos);
-    arvore = new ArvoreBMais_String_Int(10, arvoreB);
+        arquivo.seek(0);
+        arquivo.writeInt(id);
+        
+        indexDireto.create(objeto.getID(),pos);
+        indexIndireto.create(objeto.chaveSecundaria(),objeto.getID());
 
-  }
+      } catch ( Exception e){
+          System.out.println(e.getMessage());
+      }
 
-  public int create(T obj) throws Exception {
-    RandomAccessFile arq = new RandomAccessFile(fileName, "rw");
+      return id;
+    }
+    
+    public T read(int idChave) throws Exception {
+      T objeto = construtor.newInstance();
 
-    // Conversao para vetor de bytes
-    int id = arq.readInt() + 1;
-    String chaveSecundaria = obj.chaveSecundaria();
-    obj.setID(id);
-    byte[] ba = obj.toByteArray();
+      try {
+        long pos = indexDireto.read(idChave);
 
-    // Criacao do registro
-    arq.seek(arq.length());
-    long pos = arq.getFilePointer();
-    arq.writeByte(' ');
-    arq.writeInt(ba.length);
-    arq.write(ba);
-
-    // Salva ultima posicao
-    arq.seek(0);
-    arq.writeInt(id);
-
-    hash.create(id, pos);
-    arvore.create(chaveSecundaria, id);
-
-    arq.close();
-
-    return id;
-  }
-
-  public T read(int id) throws Exception {
-    Long pos = hash.read(id);
-
-    T obj = this.construtor.newInstance();
-
-    // Posicao retornada pelo indice
-    RandomAccessFile arq = new RandomAccessFile(fileName, "rw");
-    boolean found = false;
-
-    // Lê o registro
-    if (pos >= 0) {
-      arq.seek(pos);
-
-      int tamR;
-      byte[] ba;
-
-      if (arq.readByte() != '*') {
-        tamR = arq.readInt();
-        ba = new byte[tamR];
-        arq.read(ba);
-        obj.fromByteArray(ba);
-        if (id == obj.getID()) {
-          found = true;
+        if (pos == -1) {
+          objeto = null;
+          throw new Exception("ERRO! Registro não encontrado\n");
         }
-      }
-    }
 
-    if (!found) {
-      obj = null;
-    }
+        arquivo.seek(pos);
+        byte lapide = arquivo.readByte();
+        
+        if (lapide == 1){
+          System.out.println("ERRO! Registro Excluído!\n");
+        }
 
-    arq.close();
+        int tamCampo = arquivo.readInt();
+        byte[] ba = new byte[tamCampo];
+        arquivo.read(ba);
+        objeto.fromByteArray(ba);
 
-    return obj;
-  }
-
-  public T read(String chave) throws Exception {
-    int id = arvore.read(chave);
-    return this.read(id);
-  }
-
-  public boolean update(T obj) throws Exception {
-
-    RandomAccessFile arq = new RandomAccessFile(fileName, "rw");
-    long pos;
-    T obj2 = this.read(obj.getID());
-    byte[] ba, ba2;
-    boolean ok = false;
-
-    // Compara os tamanhos dos arquivos/objetos
-    if (obj2 != null) {
-      pos = hash.read(obj.getID());
-      arq.seek(pos);
-
-      ba = obj.toByteArray();
-      ba2 = obj2.toByteArray();
-
-      // Sobrescrever o arquivo
-      if (ba2.length >= ba.length) {
-        arq.seek(arq.getFilePointer() + 5);
-        arq.write(ba);
-
-        // Criacao de um novo registro no fim do arquivo
-      } else {
-        arq.writeByte('*');
-        arq.seek(arq.length());
-        pos = arq.getFilePointer();
-        arq.writeByte(' ');
-        arq.writeInt(ba.length);
-        arq.write(ba);
-        hash.update(obj.getID(), pos);
+      } catch(Exception e) {
+          System.out.println(e.getMessage());
       }
 
-      // Atualizar indice indireto
-      if (obj.chaveSecundaria().compareTo(obj2.chaveSecundaria()) != 0) {
-        arvore.update(obj.chaveSecundaria(), obj.getID());
-      }
-
-      ok = true;
+      return objeto;
     }
 
-    arq.close();
-    return ok;
-  }
+    public T read(String chaveSecundaria) throws Exception {
+      try {
+        int ID = indexIndireto.read(chaveSecundaria); 
+        if (ID!=-1) return read(ID);
+      }catch(Exception e){}
+      
+      return null;
+    }
+  
+    public boolean update(T objetoNovo) throws IOException {
+      boolean ok = false;
 
-  public boolean delete(int id) throws Exception {
+    try {
+        long pos = indexDireto.read(objetoNovo.getID());
 
-    long pos = hash.read(id);
+        if (pos != -1){
+            arquivo.seek(pos);
 
-    int tamR;
-    T obj = construtor.newInstance();
-    byte[] ba;
-    boolean ok = false;
+            byte lapide = arquivo.readByte();
+            int tamAntigo = arquivo.readInt();
+            byte[] baAntigo= new byte[tamAntigo];
+            arquivo.read(baAntigo);
 
-    // Posicao retornada pela tabela hash
-    RandomAccessFile arq = new RandomAccessFile(fileName, "rw");
-    arq.seek(pos);
+            T objetoAntigo = construtor.newInstance(); 
+            objetoAntigo.fromByteArray(baAntigo);
+      
+            byte baNovo[] = objetoNovo.toByteArray();
+            int tamNovo = baNovo.length;
 
-    // Lê o registro
-    if (arq.readByte() != '*') {
-      tamR = arq.readInt();
-      ba = new byte[tamR];
-      arq.read(ba);
-      obj.fromByteArray(ba);
-      if (id == obj.getID()) {
-        ok = true;
-        arq.seek(pos);
-        arq.writeByte('*');
-        arvore.delete(obj.chaveSecundaria());
-        hash.delete(id);
-      }
+            if (tamAntigo < tamNovo){
+            arquivo.seek(pos);
+            arquivo.writeByte(1);
+    
+            objetoNovo.setID(objetoAntigo.getID());
+
+            pos = arquivo.length();
+            arquivo.seek(pos);
+        
+            byte ba[] = objetoNovo.toByteArray();
+            arquivo.writeByte(0);
+            arquivo.writeInt(ba.length);
+            arquivo.write(ba);
+
+            indexDireto.update(objetoNovo.getID(),pos);
+            ok = true;
+          
+            }else {
+                arquivo.seek(pos+1);
+                arquivo.writeInt(baNovo.length);
+                arquivo.write(baNovo);
+        
+                ok = true;
+            }
+
+            if (!objetoNovo.chaveSecundaria().equals(objetoAntigo.chaveSecundaria())) {
+            
+                indexIndireto.update(objetoNovo.chaveSecundaria(),objetoNovo.getID());
+            }
+
+        } else {
+            System.out.println("Registro não encontrado!");
+        }
+    } catch (Exception e) {
+          System.out.println(e.getMessage());
     }
 
-    arq.close();
+      return ok;
+    }
 
-    return ok;
+    public boolean delete(int ID) throws IOException {
+      
+      boolean ok = false; // controle
+      try {
+
+        long pos = indexDireto.read(ID);
+          
+        arquivo.seek(pos);
+        arquivo.writeByte(1);
+
+        indexDireto.delete(ID);
+        T objeto = read(ID);
+        indexIndireto.delete(objeto.chaveSecundaria());
+
+      } catch (Exception e){
+          System.out.println(e.getMessage());
+      }
+      
+      return ok;
+    }
+    
   }
-}
